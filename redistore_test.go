@@ -3,6 +3,7 @@ package redistore
 import (
 	"bytes"
 	"encoding/gob"
+	"github.com/garyburd/redigo/redis"
 	"github.com/gorilla/sessions"
 	"net/http"
 	"testing"
@@ -86,7 +87,11 @@ func TestRediStore(t *testing.T) {
 	// Round 1 ----------------------------------------------------------------
 
 	// RedisStore
-	store := NewRediStore(10, "tcp", ":6379", "", []byte("secret-key"))
+	conn, err := redis.Dial("tcp", ":6379")
+	if err != nil {
+		t.Fatalf("Error dialing redis: %v", err)
+	}
+	store := NewRediStore(conn, []byte("secret-key"))
 	defer store.Close()
 
 	req, _ = http.NewRequest("GET", "http://localhost:8080/", nil)
@@ -160,7 +165,11 @@ func TestRediStore(t *testing.T) {
 	// Custom type
 
 	// RedisStore
-	store = NewRediStore(10, "tcp", ":6379", "", []byte("secret-key"))
+	conn, err = redis.Dial("tcp", ":6379")
+	if err != nil {
+		t.Fatalf("Error dialing redis: %v", err)
+	}
+	store = NewRediStore(conn, []byte("secret-key"))
 	defer store.Close()
 
 	req, _ = http.NewRequest("GET", "http://localhost:8080/", nil)
@@ -238,12 +247,6 @@ func TestRediStore(t *testing.T) {
 	//if !ok || len(cookies) != 1 {
 	//	t.Fatalf("No cookies. Header:", hdr)
 	//}
-}
-
-func ExampleRediStore() {
-	// RedisStore
-	store := NewRediStore(10, "tcp", ":6379", "", []byte("secret-key"))
-	defer store.Close()
 }
 
 func init() {

@@ -11,7 +11,6 @@ import (
 	"github.com/gorilla/sessions"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // Amount of time for cookies/redis keys to expire.
@@ -19,36 +18,15 @@ var sessionExpire int = 86400 * 30
 
 // RediStore stores sessions in a redis backend.
 type RediStore struct {
-	Pool    *redis.Pool
+	Conn    redis.Conn
 	Codecs  []securecookie.Codec
 	Options *sessions.Options // default configuration
 }
 
 // NewRediStore returns a new RediStore.
-func NewRediStore(size int, network, address, password string, keyPairs ...[]byte) *RediStore {
+func NewRediStore(conn redis.Conn, keyPairs ...[]byte) *RediStore {
 	return &RediStore{
-		// http://godoc.org/github.com/garyburd/redigo/redis#Pool
-		Pool: &redis.Pool{
-			MaxIdle:     size,
-			IdleTimeout: 240 * time.Second,
-			Dial: func() (redis.Conn, error) {
-				c, err := redis.Dial(network, address)
-				if err != nil {
-					return nil, err
-				}
-				if password != "" {
-					if _, err := c.Do("AUTH", password); err != nil {
-						c.Close()
-						return nil, err
-					}
-				}
-				return c, err
-			},
-			TestOnBorrow: func(c redis.Conn, t time.Time) error {
-				_, err := c.Do("PING")
-				return err
-			},
-		},
+		Conn:   conn,
 		Codecs: securecookie.CodecsFromPairs(keyPairs...),
 		Options: &sessions.Options{
 			Path:   "/",
@@ -59,7 +37,7 @@ func NewRediStore(size int, network, address, password string, keyPairs ...[]byt
 
 // Close cleans up the redis connections.
 func (s *RediStore) Close() {
-	s.Pool.Close()
+	s.Conn.Close()
 }
 
 // Get returns a session for the given name after adding it to the registry.
@@ -119,9 +97,7 @@ func (s *RediStore) Save(r *http.Request, w http.ResponseWriter, session *sessio
 // WARNING: This method should be considered deprecated since it is not exposed via the gorilla/sessions interface.
 // Set session.Options.MaxAge = -1 and call Save instead. - July 18th, 2013
 func (s *RediStore) Delete(r *http.Request, w http.ResponseWriter, session *sessions.Session) error {
-	conn := s.Pool.Get()
-	defer conn.Close()
-	if _, err := conn.Do("DEL", "session_"+session.ID); err != nil {
+	if _, err := s.Conn.Do("DEL", "session_"+session.ID); err != nil {
 		return err
 	}
 	// Set cookie to expire.
@@ -141,15 +117,13 @@ func (s *RediStore) save(session *sessions.Session) error {
 	if err != nil {
 		return err
 	}
-	conn := s.Pool.Get()
-	defer conn.Close()
-	conn.Send("SET", "session_"+session.ID, encoded)
-	conn.Send("EXPIRE", "session_"+session.ID, sessionExpire)
-	conn.Flush()
-	if _, err := conn.Receive(); err != nil { // SET
+	s.Conn.Send("SET", "session_"+session.ID, encoded)
+	s.Conn.Send("EXPIRE", "session_"+session.ID, sessionExpire)
+	s.Conn.Flush()
+	if _, err := s.Conn.Receive(); err != nil { // SET
 		return err
 	}
-	if _, err := conn.Receive(); err != nil { // EXPIRE
+	if _, err := s.Conn.Receive(); err != nil { // EXPIRE
 		return err
 	}
 	return nil
@@ -157,12 +131,10 @@ func (s *RediStore) save(session *sessions.Session) error {
 
 // load reads the session from redis.
 func (s *RediStore) load(session *sessions.Session) error {
-	conn := s.Pool.Get()
-	defer conn.Close()
-	if err := conn.Err(); err != nil {
+	if err := s.Conn.Err(); err != nil {
 		return err
 	}
-	data, err := conn.Do("GET", "session_"+session.ID)
+	data, err := s.Conn.Do("GET", "session_"+session.ID)
 	if err != nil {
 		return err
 	}
@@ -181,9 +153,7 @@ func (s *RediStore) load(session *sessions.Session) error {
 
 // delete removes keys from redis if MaxAge<0
 func (s *RediStore) delete(session *sessions.Session) error {
-	conn := s.Pool.Get()
-	defer conn.Close()
-	if _, err := conn.Do("DEL", "session_"+session.ID); err != nil {
+	if _, err := s.Conn.Do("DEL", "session_"+session.ID); err != nil {
 		return err
 	}
 	return nil
