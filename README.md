@@ -1,6 +1,6 @@
 # redistore
 
-A session store backend for [gorilla/sessions](http://www.gorillatoolkit.org/pkg/sessions) - [src](https://github.com/gorilla/sessions).
+A session store backend for [gorilla/sessions](http://www.gorillatoolkit.org/pkg/sessions) - [src](https://github.com/gorilla/sessions). This is a modified version of [boj/redistore](https://github.com/boj/redistore) in that you pass an existing redis connection rather than allowing redistore to create connections for you.
 
 ## Requirements
 
@@ -8,18 +8,19 @@ Depends on the [Redigo](https://github.com/garyburd/redigo) Redis library.
 
 ## Installation
 
-    go get github.com/boj/redistore
+    go get github.com/ahare/redistore
 
 ## Documentation
 
-Available on [godoc.org](http://www.godoc.org/github.com/boj/redistore).
+Available on [godoc.org](http://www.godoc.org/github.com/ahare/redistore).
 
 See http://www.gorillatoolkit.org/pkg/sessions for full documentation on underlying interface.
 
 ### Example
 
     // Fetch new store.
-    store := NewRediStore(10, "tcp", ":6379", "", []byte("secret-key"))
+    conn := redis.Dial("tcp", ":6379")
+    store := NewRediStore(conn, []byte("secret-key"))
     defer store.Close()
 
     // Get a session.
